@@ -1,0 +1,24 @@
+{
+  "name": "medicine-backend",
+  "version": "1.0.0",
+  "description": "Smart Medicine Reminder System - Backend API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["medicine", "reminder", "api"],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "mongoose": "^9.0.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
