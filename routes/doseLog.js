@@ -39,6 +39,7 @@ async function sendMissedDoseEmail({ patient, logData }) {
     host: "smtp.gmail.com",
     port: 465,
     secure: true,
+    family: 4,
     auth: { user, pass }
   });
 
