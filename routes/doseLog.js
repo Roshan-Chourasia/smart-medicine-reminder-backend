@@ -80,14 +80,22 @@ async function sendMissedDoseEmail({ patient, logData }) {
       return;
     }
     try {
-      await sgMail.send({
+      const [response] = await sgMail.send({
         to,
         from,
         subject,
         text,
         html
       });
-      console.log("[missed-dose-email] SendGrid: mail sent successfully");
+      const msgId =
+        response.headers &&
+        (response.headers["x-message-id"] || response.headers["X-Message-Id"]);
+      console.log("[missed-dose-email] SendGrid accepted (202 = queued for delivery):", {
+        from,
+        to,
+        statusCode: response.statusCode,
+        xMessageId: msgId
+      });
     } catch (err) {
       console.error(
         "[missed-dose-email] SendGrid error:",
