@@ -8,15 +8,22 @@
     "dev": "node server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": ["medicine", "reminder", "api"],
+  "keywords": [
+    "medicine",
+    "reminder",
+    "api"
+  ],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
-    "mongoose": "^9.0.2"
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.0.2",
+    "nodemailer": "^8.0.3"
   },
   "engines": {
     "node": ">=18.0.0"
