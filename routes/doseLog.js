@@ -35,8 +35,18 @@ function prettifyTiming(timing) {
  * - Fallback: EMAIL_USER + EMAIL_PASS — Gmail SMTP on 587 + IPv4 (local / SMTP-allowed hosts).
  */
 async function sendMissedDoseEmail({ patient, logData }) {
-  const to = patient?.caregiverEmail || (isEmail(patient?.caregiverPhone) ? patient.caregiverPhone.trim() : null);
-  if (!to) return;
+  console.log("[missed-dose-email] function triggered");
+
+  const to =
+    patient?.caregiverEmail ||
+    (isEmail(patient?.caregiverPhone) ? patient.caregiverPhone.trim() : null);
+
+  console.log("[missed-dose-email] recipient:", to || "(none)");
+
+  if (!to) {
+    console.log("[missed-dose-email] no valid caregiver email — set caregiverEmail or email-shaped caregiverPhone on patient");
+    return;
+  }
 
   const subject = "🚨 Medication Missed Alert";
   const mealLabel = `${prettifyMeal(logData.meal)} (${prettifyTiming(logData.timing)})`;
@@ -63,9 +73,10 @@ async function sendMissedDoseEmail({ patient, logData }) {
   `.trim();
 
   if (process.env.SENDGRID_API_KEY) {
+    console.log("[missed-dose-email] using SendGrid");
     const from = process.env.EMAIL_FROM || process.env.EMAIL_USER;
     if (!from) {
-      console.warn("SendGrid: set EMAIL_FROM (verified sender) or EMAIL_USER");
+      console.log("[missed-dose-email] EMAIL_FROM and EMAIL_USER both missing — cannot send");
       return;
     }
     try {
@@ -76,32 +87,45 @@ async function sendMissedDoseEmail({ patient, logData }) {
         text,
         html
       });
+      console.log("[missed-dose-email] SendGrid: mail sent successfully");
     } catch (err) {
-      console.error("SendGrid error:", err.response?.body || err.message);
-      throw err;
+      console.error(
+        "[missed-dose-email] SendGrid error:",
+        err.response?.body || err.message
+      );
     }
     return;
   }
 
+  console.log("[missed-dose-email] SendGrid not configured — falling back to Gmail SMTP (unexpected on Render)");
+
   const user = process.env.EMAIL_USER;
   const pass = process.env.EMAIL_PASS;
-  if (!user || !pass) return;
+  if (!user || !pass) {
+    console.log("[missed-dose-email] EMAIL_USER/EMAIL_PASS missing — cannot use SMTP fallback");
+    return;
+  }
 
-  const transporter = nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 587,
-    secure: false,
-    family: 4,
-    auth: { user, pass }
-  });
+  try {
+    const transporter = nodemailer.createTransport({
+      host: "smtp.gmail.com",
+      port: 587,
+      secure: false,
+      family: 4,
+      auth: { user, pass }
+    });
 
-  await transporter.sendMail({
-    from: user,
-    to,
-    subject,
-    text,
-    html
-  });
+    await transporter.sendMail({
+      from: user,
+      to,
+      subject,
+      text,
+      html
+    });
+    console.log("[missed-dose-email] SMTP: mail sent successfully");
+  } catch (err) {
+    console.error("[missed-dose-email] SMTP error:", err.message);
+  }
 }
 
 function validateLog(body) {
@@ -176,11 +200,19 @@ router.post("/", async (req, res) => {
       await log.save();
     }
 
-    // Fire-and-forget notification only for missed doses.
+    console.log("[dose-log POST] success", {
+      deviceId: validated.data.deviceId,
+      status: validated.data.status,
+      duplicateSkipped: Boolean(existing)
+    });
+
     if (validated.data.status === "missed") {
-      sendMissedDoseEmail({ patient, logData: validated.data }).catch((emailErr) => {
-        console.warn("Failed to send missed dose email:", emailErr.message);
-      });
+      console.log("[dose-log POST] missed dose detected — sending alert email");
+      try {
+        await sendMissedDoseEmail({ patient, logData: validated.data });
+      } catch (emailErr) {
+        console.warn("[dose-log POST] sendMissedDoseEmail threw:", emailErr.message);
+      }
     }
     res.json({ success: true });
   } catch (err) {
