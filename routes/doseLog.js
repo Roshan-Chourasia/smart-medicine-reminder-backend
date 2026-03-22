@@ -3,6 +3,11 @@ const router = express.Router();
 const DoseLog = require("../models/DoseLog");
 const Patient = require("../models/Patient");
 const nodemailer = require("nodemailer");
+const sgMail = require("@sendgrid/mail");
+
+if (process.env.SENDGRID_API_KEY) {
+  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+}
 
 const MEALS = ["morning", "afternoon", "night"];
 const TIMINGS = ["before", "after"];
@@ -24,32 +29,23 @@ function prettifyTiming(timing) {
   return timing.charAt(0).toUpperCase() + timing.slice(1);
 }
 
+/**
+ * Send missed-dose alert.
+ * - Production (Render, etc.): SENDGRID_API_KEY — HTTPS API (port 443), no SMTP blocking.
+ * - Fallback: EMAIL_USER + EMAIL_PASS — Gmail SMTP on 587 + IPv4 (local / SMTP-allowed hosts).
+ */
 async function sendMissedDoseEmail({ patient, logData }) {
-  const user = process.env.EMAIL_USER;
-  const pass = process.env.EMAIL_PASS;
-  if (!user || !pass) return;
-
-  // We currently store caregiver phone in `caregiverPhone`.
-  // For this email feature, only send if it looks like an email address.
-  // (If you later add caregiverEmail, we can switch to that safely.)
   const to = patient?.caregiverEmail || (isEmail(patient?.caregiverPhone) ? patient.caregiverPhone.trim() : null);
   if (!to) return;
 
-  const transporter = nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 465,
-    secure: true,
-    family: 4,
-    auth: { user, pass }
-  });
-
   const subject = "🚨 Medication Missed Alert";
   const mealLabel = `${prettifyMeal(logData.meal)} (${prettifyTiming(logData.timing)})`;
+  const patientName = patient?.name || "Unknown";
 
-  const body = [
+  const text = [
     subject,
     "",
-    `Patient: ${patient?.name || "Unknown"}`,
+    `Patient: ${patientName}`,
     `Dose: ${mealLabel}`,
     `Time: ${logData.scheduledTime}`,
     `Status: MISSED`,
@@ -57,11 +53,54 @@ async function sendMissedDoseEmail({ patient, logData }) {
     "Please take necessary action."
   ].join("\n");
 
+  const html = `
+    <h2>Missed dose alert</h2>
+    <p><b>Patient:</b> ${patientName}</p>
+    <p><b>Dose:</b> ${mealLabel}</p>
+    <p><b>Scheduled time:</b> ${logData.scheduledTime}</p>
+    <p><b>Status:</b> MISSED</p>
+    <p>Please take necessary action.</p>
+  `.trim();
+
+  if (process.env.SENDGRID_API_KEY) {
+    const from = process.env.EMAIL_FROM || process.env.EMAIL_USER;
+    if (!from) {
+      console.warn("SendGrid: set EMAIL_FROM (verified sender) or EMAIL_USER");
+      return;
+    }
+    try {
+      await sgMail.send({
+        to,
+        from,
+        subject,
+        text,
+        html
+      });
+    } catch (err) {
+      console.error("SendGrid error:", err.response?.body || err.message);
+      throw err;
+    }
+    return;
+  }
+
+  const user = process.env.EMAIL_USER;
+  const pass = process.env.EMAIL_PASS;
+  if (!user || !pass) return;
+
+  const transporter = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 587,
+    secure: false,
+    family: 4,
+    auth: { user, pass }
+  });
+
   await transporter.sendMail({
     from: user,
     to,
     subject,
-    text: body
+    text,
+    html
   });
 }
 
