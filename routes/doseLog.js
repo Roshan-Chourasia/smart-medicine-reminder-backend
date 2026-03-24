@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const DoseLog = require("../models/DoseLog");
 const Patient = require("../models/Patient");
+const auth = require("../middleware/auth");
 const nodemailer = require("nodemailer");
 const sgMail = require("@sendgrid/mail");
 
@@ -225,6 +226,33 @@ router.post("/", async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/dose-log/my
+ * Patient fetches own history without passing deviceId
+ */
+router.get("/my", auth, async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
+    const patient = await Patient.findOne({
+      userId: req.userId,
+      deviceId: { $ne: null },
+      deviceActive: true
+    });
+
+    if (!patient || !patient.deviceId) {
+      return res.json([]);
+    }
+
+    const logs = await DoseLog.find({ deviceId: patient.deviceId })
+      .sort({ timestamp: -1 })
+      .limit(limit);
+
+    return res.json(logs);
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
   }
 });
 
