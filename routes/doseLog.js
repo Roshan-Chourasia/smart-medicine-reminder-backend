@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const DoseLog = require("../models/DoseLog");
 const Patient = require("../models/Patient");
+const User = require("../models/User");
 const auth = require("../middleware/auth");
 const nodemailer = require("nodemailer");
 const sgMail = require("@sendgrid/mail");
@@ -236,11 +237,25 @@ router.post("/", async (req, res) => {
 router.get("/my", auth, async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
-    const patient = await Patient.findOne({
+    let patient = await Patient.findOne({
       userId: req.userId,
       deviceId: { $ne: null },
       deviceActive: true
     });
+
+    // Backward-compatible fallback for legacy records not linked by userId:
+    // resolve patient by patientEmail matching logged-in email.
+    if (!patient && req.userRole === "patient") {
+      const user = await User.findById(req.userId).select("email");
+      const email = user?.email ? String(user.email).trim().toLowerCase() : null;
+      if (email) {
+        patient = await Patient.findOne({
+          patientEmail: email,
+          deviceId: { $ne: null },
+          deviceActive: true
+        });
+      }
+    }
 
     if (!patient || !patient.deviceId) {
       return res.json([]);

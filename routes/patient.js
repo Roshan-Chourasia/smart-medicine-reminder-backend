@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
+const User = require('../models/User');
 
 // Patient model - will work once models/Patient.js exists
 let Patient;
@@ -31,15 +32,31 @@ function addOnlineStatus(patient) {
   return patientObj;
 }
 
+async function resolvePatientAccessQuery(req) {
+  // Default access: owner/caregiver links by userId
+  const byUser = { $or: [{ userId: req.userId }, { caregivers: req.userId }] };
+
+  // Patient fallback: if legacy records were not linked by userId,
+  // allow matching via patientEmail = logged-in user email.
+  if (req.userRole === 'patient') {
+    const user = await User.findById(req.userId).select('email');
+    const email = user?.email ? String(user.email).trim().toLowerCase() : null;
+    if (email) {
+      return { $or: [...byUser.$or, { patientEmail: email }] };
+    }
+  }
+
+  return byUser;
+}
+
 // GET /api/patient - Get all patients for the authenticated user
 router.get('/', auth, async (req, res) => {
   try {
     if (!Patient) {
       return res.status(503).json({ message: 'Patient model not available yet' });
     }
-    const patients = await Patient.find({
-      $or: [{ userId: req.userId }, { caregivers: req.userId }]
-    });
+    const accessQuery = await resolvePatientAccessQuery(req);
+    const patients = await Patient.find(accessQuery);
     // Add online status to each patient
     const patientsWithStatus = patients.map(p => addOnlineStatus(p));
     res.json(patientsWithStatus);
@@ -76,9 +93,10 @@ router.get('/:id', auth, async (req, res) => {
     if (!Patient) {
       return res.status(503).json({ message: 'Patient model not available yet' });
     }
+    const accessQuery = await resolvePatientAccessQuery(req);
     const patient = await Patient.findOne({
       _id: req.params.id,
-      $or: [{ userId: req.userId }, { caregivers: req.userId }]
+      ...accessQuery
     });
     if (!patient) {
       return res.status(404).json({ message: 'Patient not found' });
